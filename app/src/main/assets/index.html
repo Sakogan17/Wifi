@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visor WiFi</title>
+<style>
+  :root{--fondo:#0f1a1f;--tarjeta:#17262d;--texto:#e8f1f2;--suave:#8fa6ad;--acento:#2fd0b5;--malo:#ff6b5b;--medio:#f5c04a}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--fondo);color:var(--texto);font-family:system-ui,sans-serif}
+  header{display:flex;justify-content:space-between;align-items:center;padding:20px 16px 12px}
+  h1{font-size:22px;margin:0}
+  button{background:var(--acento);color:#06211c;border:0;border-radius:10px;padding:10px 16px;font-size:15px;font-weight:600}
+  button.sec{background:#2a3d45;color:var(--texto)}
+  #estado{padding:0 16px 8px;color:var(--suave);font-size:14px}
+  ul{list-style:none;margin:0;padding:0 12px 24px}
+  li{background:var(--tarjeta);border-radius:12px;padding:14px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:4px}
+  .nombre{font-size:17px;font-weight:600}.dbm{font-weight:700;text-align:right}
+  .detalle{color:var(--suave);font-size:13px}
+  .barra{grid-column:1/-1;height:5px;border-radius:3px;background:#0f1a1f;margin-top:6px}
+  .barra i{display:block;height:100%;border-radius:3px}
+  #panel{position:fixed;left:0;right:0;bottom:0;background:#1d3039;padding:18px 16px 24px;
+         border-radius:18px 18px 0 0;display:none;box-shadow:0 -8px 30px rgba(0,0,0,.5)}
+  #panel h2{margin:0 0 10px;font-size:18px}
+  #panel input{width:100%;padding:12px;font-size:16px;border-radius:10px;border:1px solid #3a525c;
+               background:#0f1a1f;color:var(--texto);margin-bottom:12px}
+  .fila{display:flex;gap:10px}.fila button{flex:1}
+  #msg{margin:0 0 10px;font-size:14px;min-height:18px}
+</style>
+</head>
+<body>
+<header><h1>Redes WiFi</h1><button onclick="escanear()">Buscar</button></header>
+<div id="estado">Toca Buscar para ver las redes cercanas.</div>
+<ul id="lista"></ul>
+
+<div id="panel">
+  <h2 id="panelNombre"></h2>
+  <input id="clave" type="password" placeholder="Contraseña" autocomplete="off">
+  <p id="msg"></p>
+  <div class="fila">
+    <button class="sec" onclick="cerrar()">Cancelar</button>
+    <button onclick="conectar()">Conectar</button>
+  </div>
+</div>
+
+<script>
+let redes = [], elegida = null;
+const color = d => d >= -60 ? 'var(--acento)' : d >= -75 ? 'var(--medio)' : 'var(--malo)';
+const pct = d => Math.max(0, Math.min(100, 2 * (d + 100)));
+const esc = t => String(t).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function escanear() {
+  const estado = document.getElementById('estado');
+  if (typeof Android === 'undefined') { estado.textContent = 'Abre esto dentro de la app.'; return; }
+  const r = Android.escanear();
+  if (r === 'SIN_PERMISO') { estado.textContent = 'Falta el permiso. Acéptalo y toca Buscar otra vez.'; return; }
+  redes = JSON.parse(r).sort((a, b) => b.dbm - a.dbm);
+  estado.textContent = redes.length + ' redes encontradas. Toca una para conectarte.';
+  document.getElementById('lista').innerHTML = redes.map((n, i) => `
+    <li onclick="elegir(${i})">
+      <span class="nombre">${esc(n.ssid)}</span>
+      <span class="dbm" style="color:${color(n.dbm)}">${n.dbm} dBm</span>
+      <span class="detalle">${n.banda} · canal ${n.canal} · ${n.seguridad}</span>
+      <span class="detalle" style="text-align:right">${esc(n.bssid)}</span>
+      <div class="barra"><i style="width:${pct(n.dbm)}%;background:${color(n.dbm)}"></i></div>
+    </li>`).join('');
+}
+
+function elegir(i) {
+  elegida = redes[i];
+  if (elegida.ssid === '(red oculta)') { document.getElementById('estado').textContent = 'No se puede conectar a redes ocultas desde aquí.'; return; }
+  if (elegida.seguridad === 'Abierta' || elegida.seguridad === 'WEP') {
+    document.getElementById('estado').textContent = 'Esta app solo conecta redes WPA2 y WPA3.'; return;
+  }
+  document.getElementById('panelNombre').textContent = elegida.ssid;
+  document.getElementById('clave').value = '';
+  setMsg('', '');
+  document.getElementById('panel').style.display = 'block';
+}
+
+function cerrar() { document.getElementById('panel').style.display = 'none'; }
+function setMsg(t, c) { const m = document.getElementById('msg'); m.textContent = t; m.style.color = c; }
+
+function conectar() {
+  const clave = document.getElementById('clave').value;
+  if (clave.length < 8) { setMsg('La contraseña debe tener al menos 8 caracteres.', 'var(--malo)'); return; }
+  setMsg('Conectando... acepta el aviso de Android.', 'var(--suave)');
+  Android.conectar(elegida.ssid, clave, elegida.seguridad);
+}
+
+function resultadoConexion(texto) {
+  if (texto === 'OK') { setMsg('¡Conectado a ' + elegida.ssid + '!', 'var(--acento)'); }
+  else { setMsg(texto, 'var(--malo)'); }
+}
+</script>
+</body>
+</html>
