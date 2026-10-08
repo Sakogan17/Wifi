@@ -5,13 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Visor WiFi</title>
 <style>
-  :root{--fondo:#0f1a1f;--tarjeta:#17262d;--texto:#e8f1f2;--suave:#8fa6ad;--acento:#2fd0b5;--malo:#ff6b5b;--medio:#f5c04a}
+  :root{--fondo:#0f1a1f;--tarjeta:#17262d;--texto:#e8f1f2;--suave:#8fa6ad;--acento:#2fd0b5;--malo:#ff6b5b;--medio:#f5c04a;--linea:#3a525c;--celda:#0f1a1f}
   *{box-sizing:border-box}
   body{margin:0;background:var(--fondo);color:var(--texto);font-family:system-ui,sans-serif}
   header{display:flex;justify-content:space-between;align-items:center;padding:20px 16px 12px}
   h1{font-size:22px;margin:0}
   button{background:var(--acento);color:#06211c;border:0;border-radius:10px;padding:10px 16px;font-size:15px;font-weight:600}
   button.sec{background:#2a3d45;color:var(--texto)}
+  button.full{width:100%;margin-bottom:12px}
+  button:disabled{opacity:.45}
   #estado{padding:0 16px 8px;color:var(--suave);font-size:14px}
   ul{list-style:none;margin:0;padding:0 12px 24px}
   li{background:var(--tarjeta);border-radius:12px;padding:14px;margin-bottom:10px;display:grid;grid-template-columns:1fr auto;gap:4px}
@@ -20,12 +22,40 @@
   .barra{grid-column:1/-1;height:5px;border-radius:3px;background:#0f1a1f;margin-top:6px}
   .barra i{display:block;height:100%;border-radius:3px}
   #panel{position:fixed;left:0;right:0;bottom:0;background:#1d3039;padding:18px 16px 24px;
-         border-radius:18px 18px 0 0;display:none;box-shadow:0 -8px 30px rgba(0,0,0,.5)}
+         border-radius:18px 18px 0 0;display:none;box-shadow:0 -8px 30px rgba(0,0,0,.5);z-index:10;
+         max-height:88vh;overflow-y:auto}
   #panel h2{margin:0 0 10px;font-size:18px}
   #panel input{width:100%;padding:12px;font-size:16px;border-radius:10px;border:1px solid #3a525c;
                background:#0f1a1f;color:var(--texto);margin-bottom:12px}
   .fila{display:flex;gap:10px}.fila button{flex:1}
   #msg{margin:0 0 10px;font-size:14px;min-height:18px}
+
+  /* --- Caja fuerte (panel superpuesto) --- */
+  #panelCF{position:fixed;left:0;right:0;bottom:0;background:#1d3039;padding:18px 16px 24px;
+           border-radius:18px 18px 0 0;display:none;box-shadow:0 -8px 30px rgba(0,0,0,.5);z-index:20;
+           max-height:92vh;overflow-y:auto}
+  #panelCF h2{margin:0 0 4px;font-size:18px}
+  #panelCF p.sub{margin:0 0 14px;color:var(--suave);font-size:13px}
+  .cf-panel{background:var(--tarjeta);border:1px solid var(--linea);border-radius:12px;padding:14px;margin-bottom:12px}
+  .cf-panel label{display:block;font-size:13px;color:var(--suave);margin-bottom:6px}
+  .cf-panel input,.cf-panel select{width:100%;font:inherit;color:var(--texto);background:var(--celda);
+      border:1px solid var(--linea);border-radius:10px;padding:12px;font-size:17px}
+  .cf-panel input{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.2em}
+  .cf-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  .cf-dial{display:flex;gap:7px;justify-content:center;flex-wrap:wrap;min-height:66px;margin:6px 0 12px}
+  .cf-dial .c{width:40px;height:60px;border-radius:8px;background:var(--celda);border:2px solid var(--linea);
+      display:flex;align-items:center;justify-content:center;font:700 30px ui-monospace,Menlo,Consolas,monospace;color:var(--acento)}
+  .cf-dial.s .c{width:24px;height:38px;font-size:18px;border-width:1px}
+  .cf-dial.ok .c{border-color:var(--acento);color:var(--acento)}
+  .cf-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;text-align:center}
+  .cf-stats b{display:block;font-size:18px;font-variant-numeric:tabular-nums}
+  .cf-stats span{font-size:12px;color:var(--suave)}
+  .cf-bar{height:6px;background:var(--celda);border-radius:3px;overflow:hidden;margin:12px 0 0}
+  .cf-bar i{display:block;height:100%;width:0;background:var(--acento)}
+  #cfMsg{min-height:20px;margin-top:10px;font-weight:600;text-align:center;font-size:14px}
+  #cfMsg.ok{color:var(--acento)}
+  .cf-note{font-size:12px;color:var(--suave);margin:8px 0 0;text-align:center}
+  #cfUsar{display:none}
 </style>
 </head>
 <body>
@@ -36,11 +66,56 @@
 <div id="panel">
   <h2 id="panelNombre"></h2>
   <input id="clave" type="password" placeholder="Contraseña" autocomplete="off">
+  <button class="sec full" type="button" onclick="cfAbrir()">🔓 Probar con caja fuerte</button>
   <p id="msg"></p>
+  <div id="exito" style="display:none;margin-bottom:12px">
+    <label style="display:block;font-size:13px;color:var(--suave);margin-bottom:6px">Contraseña que funcionó (toca Copiar)</label>
+    <div style="display:flex;gap:8px">
+      <input id="claveTexto" type="text" readonly style="flex:1;margin-bottom:0;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.15em">
+      <button type="button" class="sec" id="copiarClave" style="flex:0 0 auto">Copiar</button>
+    </div>
+  </div>
   <div class="fila">
     <button class="sec" onclick="cerrar()">Cancelar</button>
     <button onclick="conectar()">Conectar</button>
   </div>
+</div>
+
+<!-- Panel de la caja fuerte (fuerza bruta), accesible desde el panel de contraseña -->
+<div id="panelCF">
+  <h2>Caja fuerte</h2>
+  <p class="sub">Escribe el código a probar. La app intenta combinaciones hasta abrirlo.</p>
+
+  <div class="cf-panel">
+    <label for="cfCode">Código a probar</label>
+    <input id="cfCode" inputmode="numeric" autocomplete="off" placeholder="ej. 4821" maxlength="20">
+    <div class="cf-row">
+      <div><label for="cfSet">Caracteres</label>
+        <select id="cfSet"><option value="d">Números (0-9)</option><option value="l">Letras (a-z, A-Z)</option><option value="a">Letras y números</option><option value="s">Símbolos</option><option value="x">Todo (letras, números y símbolos)</option></select></div>
+      <div><label for="cfSpd">Velocidad</label>
+        <select id="cfSpd"><option value="30">Lenta (verla)</option><option value="1500" selected>Media</option><option value="0">Máxima</option></select></div>
+    </div>
+  </div>
+
+  <div class="cf-panel">
+    <div class="cf-dial" id="cfDial" aria-live="off"></div>
+    <div class="cf-stats">
+      <div><b id="cfN">0</b><span>intentos</span></div>
+      <div><b id="cfT">0.0 s</b><span>tiempo</span></div>
+      <div><b id="cfR">0</b><span>por segundo</span></div>
+    </div>
+    <div class="cf-bar"><i id="cfP"></i></div>
+    <div class="cf-note" id="cfEst"></div>
+    <div id="cfMsg" role="status"></div>
+  </div>
+
+  <div class="fila">
+    <button class="sec" id="cfGo">Empezar</button>
+    <button class="sec" id="cfStop" disabled>Parar</button>
+  </div>
+  <button class="full" id="cfUsar" style="margin-top:10px">Usar este código</button>
+  <button class="sec full" type="button" onclick="cfCerrar()">Cerrar</button>
+  <p class="cf-note">Hasta 20 caracteres. Prueba todas las longitudes desde 1 carácter, en orden, igual que un ataque real de fuerza bruta.</p>
 </div>
 
 <script>
@@ -75,6 +150,7 @@ function elegir(i) {
   document.getElementById('panelNombre').textContent = elegida.ssid;
   document.getElementById('clave').value = '';
   setMsg('', '');
+  document.getElementById('exito').style.display = 'none';
   document.getElementById('panel').style.display = 'block';
 }
 
@@ -89,9 +165,223 @@ function conectar() {
 }
 
 function resultadoConexion(texto) {
-  if (texto === 'OK') { setMsg('¡Conectado a ' + elegida.ssid + '!', 'var(--acento)'); }
-  else { setMsg(texto, 'var(--malo)'); }
+  if (texto === 'OK') {
+    setMsg('¡Conectado a ' + elegida.ssid + '!', 'var(--acento)');
+    const claveOk = document.getElementById('clave').value;
+    document.getElementById('claveTexto').value = claveOk;
+    document.getElementById('exito').style.display = 'block';
+    if (navigator.clipboard) { navigator.clipboard.writeText(claveOk).catch(() => {}); }
+  } else {
+    setMsg(texto, 'var(--malo)');
+    document.getElementById('exito').style.display = 'none';
+  }
 }
+
+document.getElementById('copiarClave').onclick = function () {
+  const campo = document.getElementById('claveTexto');
+  campo.focus(); campo.select(); campo.setSelectionRange(0, 99999);
+  let copiado = false;
+  try { copiado = document.execCommand('copy'); } catch (e) {}
+  if (navigator.clipboard) { navigator.clipboard.writeText(campo.value).catch(() => {}); }
+  setMsg('¡Conectado a ' + elegida.ssid + '!' + (copiado ? ' Contraseña copiada.' : ''), 'var(--acento)');
+};
+
+/* ===================== Caja fuerte (integrada) ===================== */
+(function(){
+  var SYM="!@#$%^&*()-_=+[]{};:,.<>?/~`'\\|";
+  var SETS={d:"0123456789",
+    l:"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    a:"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
+    s:SYM,
+    x:"0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"+SYM};
+  var MAXLEN={d:20,l:20,a:20,s:20,x:20};
+  var $=function(i){return document.getElementById(i)};
+  var code=$("cfCode"),setSel=$("cfSet"),spd=$("cfSpd"),dial=$("cfDial"),msg=$("cfMsg");
+  var running=false,workers=[],chars,secret,N,L,target,total,attempts=0,start,last;
+  var WORKER_COUNT=Math.max(2,(navigator.hardwareConcurrency||4));
+
+  function fmt(x){return Math.round(x).toLocaleString("es")}
+  function big(x){return x<1e12?fmt(x):x.toExponential(2).replace("e+"," × 10^")}
+  function dur(sec){
+    if(!isFinite(sec))return "—";
+    if(sec<1)return "menos de 1 segundo";
+    if(sec<60)return Math.round(sec)+" segundos";
+    if(sec<3600)return Math.round(sec/60)+" minutos";
+    if(sec<86400)return (sec/3600).toFixed(1)+" horas";
+    if(sec<31557600)return Math.round(sec/86400)+" días";
+    var y=sec/31557600;
+    return y<1e6?fmt(y)+" años":y.toExponential(1).replace("e+"," × 10^")+" años";
+  }
+  var DICT=(
+    "1234,0000,1111,2222,3333,4444,5555,6666,7777,8888,9999,1212,1004,2001,2000,"+
+    "123456,000000,111111,123123,654321,696969,121212,112233,159753,"+
+    "password,contrasena,qwerty,asdfgh,zxcvbn,letmein,welcome,iloveyou,admin,"+
+    "abc123,abcdef,qwerty123,password1,admin123,"+
+    "abcdefgh,aaaaaa,111222,101010"
+  ).split(",");
+  function buildDict(cs){
+    var out=[];
+    for(var i=0;i<DICT.length;i++){
+      var w=DICT[i],ok=true;
+      for(var j=0;j<w.length;j++){if(cs.indexOf(w[j])<0){ok=false;break}}
+      if(ok)out.push(w);
+    }
+    return out;
+  }
+  function clean(){
+    var cs=SETS[setSel.value],m=MAXLEN[setSel.value],o="";
+    var v=code.value;
+    for(var i=0;i<v.length&&o.length<m;i++){if(cs.indexOf(v[i])>-1)o+=v[i]}
+    code.value=o; code.maxLength=m;
+    code.inputMode=setSel.value==="d"?"numeric":"text";
+    code.autocapitalize=(setSel.value==="d")?"off":"none";
+    est();
+  }
+  function draw(str,ok){
+    dial.className="cf-dial"+(str.length>8?" s":"")+(ok?" ok":"");
+    var h="";for(var i=0;i<str.length;i++)h+='<div class="c">'+str[i]+'</div>';
+    dial.innerHTML=h;
+  }
+  function position(sec,cs){
+    var Nn=cs.length,Ln=sec.length,p=0,l,v=0,i;
+    for(l=1;l<Ln;l++)p+=Math.pow(Nn,l);
+    for(i=0;i<Ln;i++)v=v*Nn+cs.indexOf(sec[i]);
+    return p+v+1;
+  }
+  function strFromG(g,Nn,cs){
+    var l=1,C=Nn;
+    while(g>=C){g-=C;C*=Nn;l++}
+    var o="",x=g;
+    for(var i=0;i<l;i++){o=cs[x%Nn]+o;x=Math.floor(x/Nn)}
+    return o;
+  }
+  function est(){
+    if(!code.value){$("cfEst").textContent="";return}
+    var pos=position(code.value,SETS[setSel.value]);
+    $("cfEst").textContent="Intentos necesarios: "+big(pos)+" · con "+WORKER_COUNT+" núcleos a pleno: "+dur(pos/(WORKER_COUNT*1.1e8));
+  }
+  function setRun(on){running=on;$("cfGo").disabled=on;$("cfStop").disabled=!on;code.disabled=on;setSel.disabled=on;spd.disabled=on;$("cfUsar").style.display="none"}
+
+  function workerSrc(){
+    return "onmessage=function(e){"+
+      "var N=e.data.N,from=e.data.from,to=e.data.to,target=e.data.target,id=e.data.id;"+
+      "var CHUNK=16000000;var x=from;var last=performance.now();"+
+      "while(x<to){"+
+        "var end=Math.min(to,x+CHUNK);"+
+        "if(target>=x&&target<end){postMessage({id:id,found:true,at:target,done:target-from+1});return;}"+
+        "var lim=end-7;while(x<lim){x+=8;}"+ "x=end;"+
+        "var now=performance.now();"+
+        "if(now-last>90){postMessage({id:id,done:x-from});last=now;}"+
+      "}"+
+      "postMessage({id:id,done:to-from,exhausted:true});"+
+    "};";
+  }
+  var workerURL=URL.createObjectURL(new Blob([workerSrc()],{type:"application/javascript"}));
+
+  function stopWorkers(){
+    for(var i=0;i<workers.length;i++)workers[i].terminate();
+    workers=[];
+  }
+
+  function tick(){
+    if(!running)return;
+    var now=performance.now(),s=(now-start)/1000;
+    $("cfN").textContent=big(attempts);
+    $("cfT").textContent=s.toFixed(1)+" s";
+    $("cfR").textContent=s>0.15?big(attempts/s)+"/s · "+WORKER_COUNT+" núcleos":"…";
+    $("cfP").style.width=Math.min(99,attempts/total*100)+"%";
+    if(s>0.5)$("cfEst").textContent="Con tu velocidad actual faltan: "+dur((total-attempts)/(attempts/s));
+    draw(strFromG(Math.min(attempts,total-1),N,chars),false);
+    if(running)requestAnimationFrame(tick);
+  }
+
+  function finish(foundAt){
+    running=false;stopWorkers();
+    setRun(false);
+    var now=performance.now(),s=(now-start)/1000;
+    $("cfN").textContent=big(attempts);$("cfT").textContent=s.toFixed(1)+" s";
+    if(foundAt!=null){
+      msg.className="ok";
+      msg.textContent="¡Abierta! El código era "+secret+" · "+big(attempts)+" intentos en "+s.toFixed(2)+" s";
+      draw(secret.split(""),true);$("cfP").style.width="100%";
+      $("cfUsar").style.display="block";
+    }else{
+      msg.className="";msg.textContent="Detenido.";
+    }
+  }
+
+  $("cfGo").onclick=function(){
+    clean();secret=code.value;
+    if(!secret){msg.className="";msg.textContent="Escribe un código primero.";code.focus();return}
+    chars=SETS[setSel.value];N=chars.length;L=secret.length;
+    var val=0;for(var i=0;i<L;i++)val=val*N+chars.indexOf(secret[i]);
+    var before=0;for(var l=1;l<L;l++)before+=Math.pow(N,l);
+    target=before+val; // índice global 0-based del secreto
+    total=target+1;
+    attempts=0;
+    msg.className="";msg.textContent="Fase 1: patrones y códigos obvios…";
+    $("cfP").style.width="0";
+    setRun(true);start=last=performance.now();
+
+    var dict=buildDict(chars),dictCount=0;
+    for(var di=0;di<dict.length;di++){
+      attempts++;dictCount++;
+      if(dict[di]===secret){
+        draw(secret.split(""),true);
+        finish(target);
+        return;
+      }
+    }
+    draw(strFromG(0,N,chars),false);
+    msg.textContent="Fase 2: fuerza bruta con "+WORKER_COUNT+" núcleos…";
+
+    var W=WORKER_COUNT,chunk=Math.ceil(total/W),progress=new Array(W).fill(0),found=false;
+    stopWorkers();
+    for(var w=0;w<W;w++){
+      var from=w*chunk,to=Math.min(total,from+chunk);
+      if(from>=to)continue;
+      var wk=new Worker(workerURL);
+      wk.onmessage=function(ev){
+        var d=ev.data;
+        progress[d.id]=d.done;
+        attempts=dictCount+progress.reduce(function(a,b){return a+b},0);
+        if(d.found&&!found){found=true;finish(target);}
+      };
+      wk.postMessage({N:N,from:from,to:to,target:target,id:w});
+      workers.push(wk);
+    }
+    requestAnimationFrame(tick);
+  };
+  $("cfStop").onclick=function(){finish(null)};
+  code.oninput=clean;
+  setSel.onchange=function(){code.value="";clean()};
+
+  // "Usar este código": copia el código encontrado al campo de contraseña del visor
+  $("cfUsar").onclick=function(){
+    document.getElementById('clave').value=secret;
+    cfCerrar();
+    setMsg('Código copiado desde la caja fuerte.', 'var(--suave)');
+  };
+
+  // Abrir/cerrar el panel de la caja fuerte desde el panel de contraseña
+  window.cfAbrir=function(){
+    if(running){finish(null)}
+    var pre=document.getElementById('clave').value||"";
+    code.value=pre;
+    clean();
+    msg.className="";msg.textContent="";
+    $("cfN").textContent="0";$("cfT").textContent="0.0 s";$("cfR").textContent="0";
+    $("cfP").style.width="0";
+    draw(pre?pre.split(""):["·","·","·","·"],false);
+    document.getElementById('panelCF').style.display='block';
+  };
+  window.cfCerrar=function(){
+    if(running){finish(null)}
+    document.getElementById('panelCF').style.display='none';
+  };
+
+  clean();draw(["·","·","·","·"],false);
+})();
 </script>
 </body>
 </html>
